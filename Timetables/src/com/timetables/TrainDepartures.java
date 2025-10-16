@@ -13,7 +13,7 @@ public class TrainDepartures {
 
     public static void main(String[] args) throws Exception {
     	
-    	String API_KEY = ""; 
+    	String API_KEY = "";
     	
     	try (InputStream input = new FileInputStream("resources/Timetables.properties")) {
     	    Properties prop = new Properties();
