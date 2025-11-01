@@ -9,7 +9,6 @@ import java.util.Scanner;
 import com.timetables.apisncf.APISNCF;
 
 public class TrainDepartures {
-    //private static final String API_KEY = "7465168f-a1ce-4ca4-a543-f385dbfc096d"; //  clé API SNCF
 
     public static void main(String[] args) throws Exception {
     	

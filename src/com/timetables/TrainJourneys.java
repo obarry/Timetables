@@ -12,9 +12,6 @@ import com.timetables.apisncf.APISNCF;
 
 public class TrainJourneys {
 	
-
-    //private static final String API_KEY = "7465168f-a1ce-4ca4-a543-f385dbfc096d"; // clé API SNCF ici
-
     public static void main(String[] args) {
     	
     	String API_KEY = "";
