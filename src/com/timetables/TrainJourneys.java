@@ -19,8 +19,12 @@ public class TrainJourneys {
     	try (InputStream input = new FileInputStream("resources/Timetables.properties")) {
     	    Properties prop = new Properties();
     	    prop.load(input);
-    	    API_KEY = prop.getProperty("API_KEY");
-    	    System.out.println(API_KEY);
+            API_KEY = prop.getProperty("API_KEY");
+            // DEBUG / SECURITY: printing the API key to stdout is a debug artifact
+            // and may expose sensitive information. Commented out to avoid
+            // accidental leakage. Keep the assignment above so the key is used
+            // normally by the application.
+            // System.out.println(API_KEY);
     	} catch (IOException ex) {
     	    ex.printStackTrace();
     	}
