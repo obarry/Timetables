@@ -7,7 +7,9 @@ import java.net.http.HttpResponse;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.Base64;
+import java.util.List;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -132,29 +134,21 @@ public class APISNCF {
     	getDepartures(station, nb_trains, new OfficialPlatformProvider());
     }
 
+    // Version console : récupère les données via fetchDepartures() puis les imprime.
     public void getDepartures(String station, int nb_trains, PlatformProvider platformProvider) throws Exception {
 
-    	String stationId = searchStationId(station);
-    	if (stationId == null) {
-    		return; // message déjà affiché par searchStationId
+    	List<Departure> departures;
+    	try {
+    		departures = fetchDepartures(station, nb_trains, platformProvider);
+    	} catch (StationNotFoundException e) {
+    		System.out.println(e.getMessage());
+    		return;
     	}
 
-    	String json = callApi("https://api.sncf.com/v1/coverage/sncf/stop_areas/" + stationId + "/departures?count=" + nb_trains);
-
-        JSONObject obj = new JSONObject(json);
-        JSONArray departures = null;
-
-        try {
-        	departures = obj.getJSONArray("departures");
-        }  catch (org.json.JSONException e) {
-            System.out.println("Aucun departure trouvé.");
-            return;
-        }
-
-        if (departures.length() == 0) {
-        	System.out.println("Aucun départ trouvé pour cette gare pour le moment.");
-        	return;
-        }
+    	if (departures.isEmpty()) {
+    		System.out.println("Aucun TER / TGV / Intercités / RER / Transilien trouvé pour cette gare pour le moment.");
+    		return;
+    	}
 
         String maj = LocalTime.now().format(DateTimeFormatter.ofPattern("HH:mm:ss"));
         System.out.println();
@@ -162,9 +156,42 @@ public class APISNCF {
     	System.out.printf("%-10s %-20s %-45s %-10s %-15s%n","Heure", "Train", "Destination", "Quai", "Statut"); // Ligne d'en-tête
     	System.out.println("--------------------------------------------------------------------------------------------------------"); // Ligne de séparation
 
-    	int i_disp = 0;
-    	for (int i = 0; i < departures.length() && i_disp < MAX_ROWS; i++) {
-    		JSONObject dep = departures.getJSONObject(i);
+    	for (Departure d : departures) {
+    		System.out.printf("%-10s %-20s %-45s %-10s %-15s%n",
+    				d.heure(), d.train(), d.destination(), d.quai(), d.statut());
+    	}
+    }
+
+    /**
+     * Récupère et calcule les prochains départs d'une gare, filtrés (TER,
+     * grandes lignes, RER/Transilien) et limités à MAX_ROWS lignes, sans rien
+     * imprimer : la présentation (console, graphique...) est laissée à
+     * l'appelant.
+     *
+     * @throws StationNotFoundException si le nom de gare ne correspond à rien.
+     */
+    public List<Departure> fetchDepartures(String station, int nb_trains, PlatformProvider platformProvider) throws Exception {
+
+    	String stationId = searchStationId(station);
+    	if (stationId == null) {
+    		throw new StationNotFoundException(station);
+    	}
+
+    	String json = callApi("https://api.sncf.com/v1/coverage/sncf/stop_areas/" + stationId + "/departures?count=" + nb_trains);
+
+        JSONObject obj = new JSONObject(json);
+        JSONArray rawDepartures = null;
+
+        try {
+        	rawDepartures = obj.getJSONArray("departures");
+        }  catch (org.json.JSONException e) {
+            return new ArrayList<>();
+        }
+
+        List<Departure> result = new ArrayList<>();
+
+    	for (int i = 0; i < rawDepartures.length() && result.size() < MAX_ROWS; i++) {
+    		JSONObject dep = rawDepartures.getJSONObject(i);
     		JSONObject info = dep.getJSONObject("display_informations");
 
     		// Lire le commercial mode (TER, TGV, ...)
@@ -181,8 +208,6 @@ public class APISNCF {
     	    if (!(isTER || isTGV || isIntercites || isRERouTransilien)) {
     	        continue; // on saute les autres (bus, tram, métro, etc.)
     	    }
-
-    	    i_disp++;
 
     		// Lire le train
     		String numTrain = info.optString("headsign", "N/A");
@@ -216,11 +241,15 @@ public class APISNCF {
 
     	    // Statut
     	    String status;
+    	    boolean retarde = false;
+    	    boolean supprime = false;
     	    if (realTime == null) {
     	        status = "Supprimé";
+    	        supprime = true;
     	    } else if (baseTime != null && realTime.isAfter(baseTime)) {
     	        long minutesLate = java.time.Duration.between(baseTime, realTime).toMinutes();
     	        status = "Retardé +" + minutesLate + " min";
+    	        retarde = true;
     	    } else {
     	        status = "À l'heure";
     	    }
@@ -229,13 +258,10 @@ public class APISNCF {
     	            ? realTime.format(DateTimeFormatter.ofPattern("HH:mm"))
     	            : "--:--";
 
-    	    System.out.printf("%-10s %-20s %-45s %-10s %-15s%n",
-    	            heureAffichee, train, destination, quai, status);
+    	    result.add(new Departure(heureAffichee, train, destination, quai, status, retarde, supprime));
     	}
 
-    	if (i_disp == 0) {
-    		System.out.println("Aucun TER / TGV / Intercités dans les prochains départs de cette gare.");
-    	}
+    	return result;
     }
 
 }
