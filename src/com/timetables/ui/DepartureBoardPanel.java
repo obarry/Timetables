@@ -126,11 +126,18 @@ public class DepartureBoardPanel extends JPanel {
         }
     }
 
+    // Ancre le filigrane près du haut du panneau (pas en bas) pour qu'il soit
+    // entièrement visible sans avoir à faire défiler, même quand le tableau
+    // contient beaucoup de lignes (panneau plus grand que la fenêtre visible).
+    private static final int WATERMARK_FONT_SIZE = 64;
+    private static final int WATERMARK_BOTTOM_ANCHOR = HEADER_HEIGHT + 320;
+
     private void paintWatermark(Graphics2D g2, int width, int height) {
         g2.setColor(WATERMARK);
-        g2.setFont(new Font("SansSerif", Font.BOLD, 46));
+        g2.setFont(new Font("SansSerif", Font.BOLD, WATERMARK_FONT_SIZE));
+        int anchorY = Math.min(height - 12, WATERMARK_BOTTOM_ANCHOR);
         AffineTransform old = g2.getTransform();
-        g2.translate(width - 34, height);
+        g2.translate(width - 44, anchorY);
         g2.rotate(-Math.PI / 2);
         g2.drawString("départs", 0, 0);
         g2.setTransform(old);
