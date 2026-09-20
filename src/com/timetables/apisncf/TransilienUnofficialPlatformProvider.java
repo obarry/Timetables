@@ -6,7 +6,9 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -15,12 +17,19 @@ import org.json.JSONObject;
  * Source NON OFFICIELLE et NON DOCUMENTÉE : un endpoint interne autrefois
  * utilisé par l'application mobile Transilien (sncf.mobi). Ce n'est PAS une
  * API publique de la SNCF :
- *  - aucune garantie de disponibilité (l'endpoint peut être mort, des retours
- *    de 2016 indiquaient déjà qu'il ne répondait plus systématiquement) ;
+ *  - aucune garantie de disponibilité (des retours de 2016 indiquaient déjà
+ *    qu'il ne répondait plus systématiquement) ;
  *  - aucune stabilité de format garantie (le JSON ci-dessous est une
  *    hypothèse à confirmer/corriger avec de vraies réponses) ;
  *  - limité au Transilien/RER (Île-de-France) : ne fonctionne pas pour les
  *    TGV/Intercités grandes lignes.
+ *
+ * CONSTAT (test réel, 20/09/2026, gare de Paris - Gare de Lyon, code TR3 PAA) :
+ * java.net.ConnectException sur toutes les requêtes. L'endpoint est mort,
+ * comme le laissait présager le retour de 2016. Code conservé tel quel (il se
+ * dégrade proprement vers "--", sans jamais planter le tableau des départs)
+ * au cas où une autre gare ou un autre moment donnerait un résultat différent,
+ * mais ne pas s'attendre à ce que cette source fonctionne en l'état.
  *
  * Utilisé uniquement à titre exploratoire pour ce proof of concept, en toute
  * connaissance de ces risques (décision explicite du porteur du projet).
@@ -30,7 +39,8 @@ public class TransilienUnofficialPlatformProvider implements PlatformProvider {
     private static final String ENDPOINT = "http://sncf.mobi/infotrafic/iphoneapp/transilien/?gare=";
 
     private final Map<String, String> stationToTr3Code; // nom de gare normalisé -> code TR3
-    private final Map<String, JSONObject> responseCache = new HashMap<>(); // code TR3 -> réponse brute (1 appel réseau par gare)
+    private final Map<String, JSONObject> responseCache = new HashMap<>(); // code TR3 -> réponse brute (succès uniquement)
+    private final Set<String> attemptedTr3Codes = new HashSet<>(); // code TR3 déjà tenté (succès ou échec) durant l'exécution
     private final HttpClient httpClient = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(5))
             .build();
@@ -57,11 +67,30 @@ public class TransilienUnofficialPlatformProvider implements PlatformProvider {
             return "--";
         }
 
-        JSONObject response = responseCache.computeIfAbsent(tr3, this::fetch);
+        JSONObject response = getOrFetch(tr3);
         if (response == null) {
             return "--";
         }
         return extractPlatform(response, trainNumber);
+    }
+
+    // Un seul appel réseau par code TR3 pour toute l'exécution, y compris en
+    // cas d'échec (Map.computeIfAbsent ne mémorise pas les résultats null,
+    // ce qui provoquait une nouvelle tentative de connexion à chaque train).
+    private JSONObject getOrFetch(String tr3) {
+        if (responseCache.containsKey(tr3)) {
+            return responseCache.get(tr3);
+        }
+        if (attemptedTr3Codes.contains(tr3)) {
+            return null; // déjà tenté et échoué durant cette exécution
+        }
+        attemptedTr3Codes.add(tr3);
+
+        JSONObject result = fetch(tr3);
+        if (result != null) {
+            responseCache.put(tr3, result);
+        }
+        return result;
     }
 
     private JSONObject fetch(String tr3) {
