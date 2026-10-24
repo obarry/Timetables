@@ -1,10 +1,10 @@
 package com.timetables.apisncf;
 
 /**
- * L'API SNCF publique (Navitia, api.sncf.com) ne fournit pas l'info de
- * quai/voie sur l'endpoint /departures (vérifié : le champ stop_point ne
- * contient rien de tel, quel que soit le mode de transport). Cette
- * implémentation retourne donc toujours "--".
+ * The public SNCF API (Navitia, api.sncf.com) does not provide platform/track
+ * information on the /departures endpoint (verified: the stop_point field
+ * contains nothing of the kind, whatever the transport mode). This
+ * implementation therefore always returns "--".
  */
 public class OfficialPlatformProvider implements PlatformProvider {
 

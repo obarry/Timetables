@@ -6,14 +6,18 @@ import java.util.Properties;
 import java.util.Scanner;
 
 import com.timetables.apisncf.APISNCF;
+import com.timetables.apisncf.BoardType;
 import com.timetables.apisncf.PlatformProvider;
 
-public class TrainDepartures {
+/**
+ * Console version: departures or arrivals board of a station.
+ */
+public class TimetablesConsole {
 
     public static void main(String[] args) {
 
-        // Force la sortie standard en UTF-8 : évite les accents/symboles
-        // mal affichés sur les consoles Windows (cmd.exe / PowerShell).
+        // Force standard output to UTF-8: avoids garbled accents/symbols
+        // on Windows consoles (cmd.exe / PowerShell).
         System.setOut(new PrintStream(System.out, true, StandardCharsets.UTF_8));
 
         Properties config = AppConfig.load();
@@ -35,9 +39,14 @@ public class TrainDepartures {
         System.out.println("Source quai/voie : " + platformProvider.name());
 
         String station;
+        BoardType type;
         try (Scanner scanner = new Scanner(System.in)) {
             System.out.print("Nom de la gare : ");
             station = scanner.nextLine().trim();
+
+            System.out.print("Tableau : (D)épart ou (A)rrivées ? [D] ");
+            String choice = scanner.nextLine().trim().toLowerCase();
+            type = choice.startsWith("a") ? BoardType.ARRIVALS : BoardType.DEPARTURES;
         }
 
         if (station.isEmpty()) {
@@ -47,9 +56,9 @@ public class TrainDepartures {
 
         APISNCF api = new APISNCF(apiKey);
         try {
-            api.getDepartures(station, 100, platformProvider);
+            api.printBoard(type, station, 100, platformProvider);
         } catch (Exception e) {
-            System.out.println("Impossible de récupérer les départs : " + e.getMessage());
+            System.out.println("Impossible de récupérer le tableau : " + e.getMessage());
         }
     }
 }

@@ -14,20 +14,19 @@ import java.util.List;
 
 import javax.swing.JPanel;
 
-import com.timetables.apisncf.Departure;
+import com.timetables.apisncf.BoardEntry;
+import com.timetables.apisncf.BoardType;
 
 /**
- * Recrée l'ambiance visuelle des tableaux d'affichage bleus SNCF (bandes
- * alternées, heure en jaune, destination en blanc, filigrane "départs") sans
- * reproduire le logo SNCF lui-même. Ne fait aucun appel réseau : reçoit une
- * liste de Departure déjà calculée et se contente de la dessiner.
+ * Recreates the look of the SNCF station display boards (alternating bands,
+ * yellow time, white station name, vertical watermark) without reproducing the
+ * SNCF logo itself. Serves both boards: blue for departures, green for
+ * arrivals (see BoardTheme). Makes no network call: receives an already
+ * computed list of BoardEntry and simply draws it.
  */
-public class DepartureBoardPanel extends JPanel {
+public class BoardPanel extends JPanel {
 
-    // Couleurs inspirées des vrais panneaux (bandes bleues alternées, jaune, blanc).
-    private static final Color BLUE_LIGHT = new Color(27, 74, 158);
-    private static final Color BLUE_DARK = new Color(10, 24, 61);
-    private static final Color HEADER_BLUE = new Color(6, 15, 40);
+    // Colors shared by both boards (bands and header depend on the BoardTheme).
     private static final Color YELLOW = new Color(255, 205, 0);
     private static final Color WHITE = Color.WHITE;
     private static final Color LATE_ORANGE = new Color(255, 150, 40);
@@ -41,30 +40,47 @@ public class DepartureBoardPanel extends JPanel {
     private static final int PLATFORM_COL_WIDTH = 64;
     private static final int PADDING = 14;
 
+    private BoardType boardType = BoardType.DEPARTURES;
+    private BoardTheme theme = BoardTheme.DEPARTURES;
     private String stationName = "";
     private String lastUpdate = "";
-    private List<Departure> departures = List.of();
+    private List<BoardEntry> entries = List.of();
     private String message = "Saisissez une gare puis cliquez sur Afficher.";
 
-    public DepartureBoardPanel() {
-        setBackground(BLUE_DARK);
+    public BoardPanel() {
+        setBackground(theme.rowDark());
         setPreferredSize(new Dimension(900, HEADER_HEIGHT + ROW_HEIGHT * 12));
     }
 
-    public void setDepartures(String stationName, List<Departure> departures) {
+    public BoardType getBoardType() {
+        return boardType;
+    }
+
+    /** Switches board (departures/arrivals): new color, previous content cleared. */
+    public void setBoardType(BoardType boardType) {
+        this.boardType = boardType;
+        this.theme = BoardTheme.of(boardType);
+        this.entries = List.of();
+        this.lastUpdate = "";
+        this.message = "Saisissez une gare puis cliquez sur Afficher.";
+        setBackground(theme.rowDark());
+        repaint();
+    }
+
+    public void setEntries(String stationName, List<BoardEntry> entries) {
         this.stationName = stationName;
-        this.departures = departures;
+        this.entries = entries;
         this.lastUpdate = LocalTime.now().format(DateTimeFormatter.ofPattern("HH:mm:ss"));
-        this.message = departures.isEmpty()
+        this.message = entries.isEmpty()
                 ? "Aucun TER / TGV / Intercités / RER / Transilien trouvé pour cette gare pour le moment."
                 : null;
-        setPreferredSize(new Dimension(getPreferredSize().width, HEADER_HEIGHT + ROW_HEIGHT * Math.max(departures.size(), 1)));
+        setPreferredSize(new Dimension(getPreferredSize().width, HEADER_HEIGHT + ROW_HEIGHT * Math.max(entries.size(), 1)));
         revalidate();
         repaint();
     }
 
     public void setMessage(String message) {
-        this.departures = List.of();
+        this.entries = List.of();
         this.message = message;
         repaint();
     }
@@ -89,12 +105,12 @@ public class DepartureBoardPanel extends JPanel {
             return;
         }
 
-        // Ordre de dessin important pour l'effet filigrane : d'abord les bandes
-        // de fond, puis le filigrane par-dessus (semi-transparent), puis le
-        // texte/les badges par-dessus le tout (sinon les bandes opaques des
-        // lignes masquent complètement le filigrane).
+        // Drawing order matters for the watermark effect: first the background
+        // bands, then the watermark on top (semi-transparent), then the
+        // text/badges on top of everything (otherwise the opaque row bands
+        // completely hide the watermark).
         int y = HEADER_HEIGHT;
-        for (int i = 0; i < departures.size(); i++) {
+        for (int i = 0; i < entries.size(); i++) {
             paintRowBackground(g2, y, width, i % 2 == 0);
             y += ROW_HEIGHT;
         }
@@ -102,19 +118,21 @@ public class DepartureBoardPanel extends JPanel {
         paintWatermark(g2, width, height);
 
         y = HEADER_HEIGHT;
-        for (Departure d : departures) {
+        for (BoardEntry d : entries) {
             paintRowContent(g2, d, y, width);
             y += ROW_HEIGHT;
         }
     }
 
     private void paintHeader(Graphics2D g2, int width) {
-        g2.setColor(HEADER_BLUE);
+        g2.setColor(theme.header());
         g2.fillRect(0, 0, width, HEADER_HEIGHT);
 
         g2.setColor(WHITE);
         g2.setFont(new Font("SansSerif", Font.BOLD, 22));
-        String title = stationName.isBlank() ? "TABLEAU DES DÉPARTS" : stationName.toUpperCase();
+        String title = stationName.isBlank()
+                ? boardType.title()
+                : stationName.toUpperCase() + " — " + boardType.label().toUpperCase();
         g2.drawString(title, PADDING, 36);
 
         if (!lastUpdate.isBlank()) {
@@ -126,27 +144,34 @@ public class DepartureBoardPanel extends JPanel {
         }
     }
 
+    // Anchors the watermark near the top of the panel (not the bottom) so that it is
+    // fully visible without scrolling, even when the board
+    // has many rows (panel taller than the visible window).
+    private static final int WATERMARK_FONT_SIZE = 64;
+    private static final int WATERMARK_BOTTOM_ANCHOR = HEADER_HEIGHT + 320;
+
     private void paintWatermark(Graphics2D g2, int width, int height) {
         g2.setColor(WATERMARK);
-        g2.setFont(new Font("SansSerif", Font.BOLD, 46));
+        g2.setFont(new Font("SansSerif", Font.BOLD, WATERMARK_FONT_SIZE));
+        int anchorY = Math.min(height - 12, WATERMARK_BOTTOM_ANCHOR);
         AffineTransform old = g2.getTransform();
-        g2.translate(width - 34, height);
+        g2.translate(width - 44, anchorY);
         g2.rotate(-Math.PI / 2);
-        g2.drawString("départs", 0, 0);
+        g2.drawString(theme.watermark(), 0, 0);
         g2.setTransform(old);
     }
 
     private void paintRowBackground(Graphics2D g2, int y, int width, boolean evenRow) {
-        g2.setColor(evenRow ? BLUE_LIGHT : BLUE_DARK);
+        g2.setColor(evenRow ? theme.rowLight() : theme.rowDark());
         g2.fillRect(0, y, width, ROW_HEIGHT);
     }
 
-    private void paintRowContent(Graphics2D g2, Departure d, int y, int width) {
+    private void paintRowContent(Graphics2D g2, BoardEntry d, int y, int width) {
         Color statusColor = d.supprime() ? CANCELLED_RED : d.retarde() ? LATE_ORANGE : new Color(210, 220, 235);
 
         int x = PADDING;
 
-        // Type de train (badge simple, sans logo) + statut en dessous
+        // Train type (plain badge, no logo) + status below
         String modeAbbrev = firstWord(d.train());
         g2.setColor(new Color(255, 255, 255, 235));
         g2.setFont(new Font("SansSerif", Font.BOLD, 12));
@@ -155,35 +180,35 @@ public class DepartureBoardPanel extends JPanel {
         g2.setFont(new Font("SansSerif", Font.PLAIN, 11));
         g2.drawString(d.statut(), x, y + 34);
 
-        // Heure (jaune, grand)
+        // Time (yellow, large)
         x = PADDING + BADGE_COL_WIDTH;
         g2.setColor(YELLOW);
         g2.setFont(new Font("SansSerif", Font.BOLD, 24));
         g2.drawString(d.heure(), x, y + 31);
 
-        // Destination (blanc, grand, prend le reste de la largeur)
+        // Destination (departures) or origin (arrivals): white, large, takes the remaining width
         x = PADDING + BADGE_COL_WIDTH + TIME_COL_WIDTH;
         int destinationWidth = width - x - PLATFORM_COL_WIDTH - PADDING;
         g2.setColor(WHITE);
         g2.setFont(new Font("SansSerif", Font.BOLD, 22));
-        String destination = truncateToWidth(g2, d.destination(), destinationWidth);
+        String destination = truncateToWidth(g2, d.otherStation(), destinationWidth);
         g2.drawString(destination, x, y + 30);
 
-        // Quai (badge à droite, uniquement si connu)
+        // Platform (badge on the right, only if known)
         if (!"--".equals(d.quai())) {
             int badgeX = width - PLATFORM_COL_WIDTH - PADDING / 2;
             int badgeSize = 34;
             int badgeY = y + (ROW_HEIGHT - badgeSize) / 2;
             g2.setColor(new Color(255, 255, 255, 235));
             g2.fillRoundRect(badgeX, badgeY, badgeSize, badgeSize, 8, 8);
-            g2.setColor(BLUE_DARK);
+            g2.setColor(theme.rowDark());
             g2.setFont(new Font("SansSerif", Font.BOLD, 16));
             String quai = d.quai();
             int qw = g2.getFontMetrics().stringWidth(quai);
             g2.drawString(quai, badgeX + (badgeSize - qw) / 2, badgeY + badgeSize - 11);
         }
 
-        // Séparateur discret entre les lignes
+        // Subtle separator between rows
         g2.setColor(new Color(0, 0, 0, 40));
         g2.setStroke(new BasicStroke(1));
         g2.drawLine(0, y + ROW_HEIGHT - 1, width, y + ROW_HEIGHT - 1);

@@ -1,20 +1,20 @@
 package com.timetables.apisncf;
 
 /**
- * Fournit (si possible) le numéro de quai/voie d'un train.
+ * Provides (when possible) the platform/track number of a train.
  *
- * L'API officielle SNCF ne fournit pas cette info (vérifié) ; une implémentation
- * alternative peut tenter de la récupérer via une source non-officielle.
+ * The official SNCF API does not provide this information (verified); an alternative
+ * implementation may try to get it from an unofficial source.
  */
 public interface PlatformProvider {
 
-    /** Nom de la source, pour affichage à l'utilisateur. */
+    /** Name of the source, for display to the user. */
     String name();
 
     /**
-     * Retourne le quai/voie pour ce train dans cette gare, ou "--" si inconnu
-     * ou indisponible. Ne doit jamais lever d'exception : toute erreur réseau
-     * ou de parsing doit être absorbée et donner "--".
+     * Returns the platform/track for this train at this station, or "--" if unknown
+     * or unavailable. Must never throw: any network or parsing error
+     * must be absorbed and result in "--".
      */
     String getPlatform(String stationName, String trainNumber);
 }

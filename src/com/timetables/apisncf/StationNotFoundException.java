@@ -1,6 +1,6 @@
 package com.timetables.apisncf;
 
-/** Levée quand aucune gare ne correspond au nom saisi. */
+/** Thrown when no station matches the entered name. */
 public class StationNotFoundException extends RuntimeException {
     public StationNotFoundException(String stationName) {
         super("Aucune gare trouvée pour « " + stationName + " ».");

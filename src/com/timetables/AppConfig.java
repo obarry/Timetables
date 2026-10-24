@@ -11,9 +11,9 @@ import com.timetables.apisncf.PlatformProvider;
 import com.timetables.apisncf.TransilienUnofficialPlatformProvider;
 
 /**
- * Chargement de resources/Timetables.properties, partagé par la version
- * console (TrainDepartures) et la version graphique (TrainDeparturesGraphical)
- * pour éviter de dupliquer cette logique dans les deux.
+ * Loads resources/Timetables.properties, shared by the console version
+ * (TimetablesConsole) and the graphical version (TimetablesApp)
+ * to avoid duplicating this logic in both.
  */
 public final class AppConfig {
 
@@ -31,10 +31,10 @@ public final class AppConfig {
     }
 
     /**
-     * Choisit la source de quai/voie selon la config (PLATFORM_SOURCE) :
-     *   OFFICIAL              -> API officielle SNCF (quai toujours "--")
-     *   TRANSILIEN_UNOFFICIEL -> endpoint non documenté, Transilien/RER uniquement,
-     *                            expérimental (voir TransilienUnofficialPlatformProvider)
+     * Chooses the platform/track source according to the config (PLATFORM_SOURCE):
+     *   OFFICIAL              -> official SNCF API (platform always "--")
+     *   TRANSILIEN_UNOFFICIEL -> undocumented endpoint, Transilien/RER only,
+     *                            experimental (see TransilienUnofficialPlatformProvider)
      */
     public static PlatformProvider buildPlatformProvider(Properties config) {
         String source = config.getProperty("PLATFORM_SOURCE", "OFFICIAL").trim().toUpperCase();
