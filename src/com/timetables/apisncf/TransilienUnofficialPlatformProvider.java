@@ -14,33 +14,33 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 /**
- * Source NON OFFICIELLE et NON DOCUMENTÉE : un endpoint interne autrefois
- * utilisé par l'application mobile Transilien (sncf.mobi). Ce n'est PAS une
- * API publique de la SNCF :
- *  - aucune garantie de disponibilité (des retours de 2016 indiquaient déjà
- *    qu'il ne répondait plus systématiquement) ;
- *  - aucune stabilité de format garantie (le JSON ci-dessous est une
- *    hypothèse à confirmer/corriger avec de vraies réponses) ;
- *  - limité au Transilien/RER (Île-de-France) : ne fonctionne pas pour les
- *    TGV/Intercités grandes lignes.
+ * UNOFFICIAL and UNDOCUMENTED source: an internal endpoint once
+ * used by the Transilien mobile app (sncf.mobi). It is NOT a
+ * public SNCF API:
+ *  - no availability guarantee (2016 reports already said it
+ *    no longer answered consistently);
+ *  - no format stability guaranteed (the JSON below is an
+ *    assumption to confirm/correct with real responses);
+ *  - limited to Transilien/RER (Île-de-France): does not work for
+ *    long-distance TGV/Intercités.
  *
- * CONSTAT (test réel, 20/09/2026, gare de Paris - Gare de Lyon, code TR3 PAA) :
- * java.net.ConnectException sur toutes les requêtes. L'endpoint est mort,
- * comme le laissait présager le retour de 2016. Code conservé tel quel (il se
- * dégrade proprement vers "--", sans jamais planter le tableau des départs)
- * au cas où une autre gare ou un autre moment donnerait un résultat différent,
- * mais ne pas s'attendre à ce que cette source fonctionne en l'état.
+ * FINDING (real test, 2026-09-20, Paris - Gare de Lyon station, TR3 code PAA):
+ * java.net.ConnectException on every request. The endpoint is dead,
+ * as the 2016 report suggested. Code kept as is (it degrades
+ * cleanly to "--", never crashing the board)
+ * in case another station or another time gives a different result,
+ * but do not expect this source to work as is.
  *
- * Utilisé uniquement à titre exploratoire pour ce proof of concept, en toute
- * connaissance de ces risques (décision explicite du porteur du projet).
+ * Used only for exploration in this proof of concept, in full
+ * knowledge of these risks (explicit decision of the project owner).
  */
 public class TransilienUnofficialPlatformProvider implements PlatformProvider {
 
     private static final String ENDPOINT = "http://sncf.mobi/infotrafic/iphoneapp/transilien/?gare=";
 
-    private final Map<String, String> stationToTr3Code; // nom de gare normalisé -> code TR3
-    private final Map<String, JSONObject> responseCache = new HashMap<>(); // code TR3 -> réponse brute (succès uniquement)
-    private final Set<String> attemptedTr3Codes = new HashSet<>(); // code TR3 déjà tenté (succès ou échec) durant l'exécution
+    private final Map<String, String> stationToTr3Code; // normalized station name -> TR3 code
+    private final Map<String, JSONObject> responseCache = new HashMap<>(); // TR3 code -> raw response (successes only)
+    private final Set<String> attemptedTr3Codes = new HashSet<>(); // TR3 code already attempted (success or failure) during this run
     private final HttpClient httpClient = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(5))
             .build();
@@ -74,15 +74,15 @@ public class TransilienUnofficialPlatformProvider implements PlatformProvider {
         return extractPlatform(response, trainNumber);
     }
 
-    // Un seul appel réseau par code TR3 pour toute l'exécution, y compris en
-    // cas d'échec (Map.computeIfAbsent ne mémorise pas les résultats null,
-    // ce qui provoquait une nouvelle tentative de connexion à chaque train).
+    // A single network call per TR3 code for the whole run, including on
+    // failure (Map.computeIfAbsent does not remember null results,
+    // which caused a new connection attempt for every train).
     private JSONObject getOrFetch(String tr3) {
         if (responseCache.containsKey(tr3)) {
             return responseCache.get(tr3);
         }
         if (attemptedTr3Codes.contains(tr3)) {
-            return null; // déjà tenté et échoué durant cette exécution
+            return null; // already attempted and failed during this run
         }
         attemptedTr3Codes.add(tr3);
 
@@ -111,7 +111,7 @@ public class TransilienUnofficialPlatformProvider implements PlatformProvider {
                 return null;
             }
             if (!body.trim().startsWith("{")) {
-                return null; // format inattendu (pas un objet JSON)
+                return null; // unexpected format (not a JSON object)
             }
             return new JSONObject(body);
         } catch (Exception e) {
@@ -122,10 +122,10 @@ public class TransilienUnofficialPlatformProvider implements PlatformProvider {
         }
     }
 
-    // Extraction volontairement défensive : le format exact de cette API
-    // non-documentée n'est pas connu avec certitude (aucune doc officielle).
-    // On tente plusieurs noms de champs plausibles et on retombe sur "--"
-    // si rien ne correspond, plutôt que de planter.
+    // Deliberately defensive extraction: the exact format of this
+    // undocumented API is not known for sure (no official documentation).
+    // We try several plausible field names and fall back to "--"
+    // if nothing matches, rather than crashing.
     private String extractPlatform(JSONObject response, String trainNumber) {
         JSONArray trains = null;
         try {
@@ -135,7 +135,7 @@ public class TransilienUnofficialPlatformProvider implements PlatformProvider {
                 trains = response.getJSONArray("trains");
             }
         } catch (Exception ignored) {
-            // la clé existe mais n'est pas un tableau : format différent de ce qu'on attendait
+            // the key exists but is not an array: different format from what we expected
         }
         if (trains == null) {
             return "--";
@@ -182,9 +182,9 @@ public class TransilienUnofficialPlatformProvider implements PlatformProvider {
     }
 
     /**
-     * Construit la table de correspondance "nom de gare" -> "code TR3" depuis
-     * la valeur de configuration TRANSILIEN_CODES, au format :
-     *   Nom Gare 1:XXX,Nom Gare 2:YYY
+     * Builds the "station name" -> "TR3 code" lookup table from
+     * the TRANSILIEN_CODES configuration value, in the format:
+     *   Station Name 1:XXX,Station Name 2:YYY
      */
     public static Map<String, String> parseStationCodes(String configValue) {
         Map<String, String> map = new HashMap<>();
