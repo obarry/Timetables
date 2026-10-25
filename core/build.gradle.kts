@@ -24,3 +24,22 @@ tasks.withType<JavaCompile> {
     options.release.set(17)
     options.encoding = "UTF-8"
 }
+
+// ---- Tests ----------------------------------------------------------------------
+dependencies {
+    // A "BOM" (bill of materials) fixes the versions of all JUnit artifacts together,
+    // so we only write the version number once.
+    testImplementation(platform("org.junit:junit-bom:6.1.3"))
+    testImplementation("org.junit.jupiter:junit-jupiter")
+    // Gradle 9 no longer provides the JUnit launcher itself: it must be declared.
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+}
+
+tasks.test {
+    // Tell Gradle the tests are JUnit Platform tests (JUnit 5 and later).
+    useJUnitPlatform()
+    testLogging {
+        // Print one line per test in the console (by default only failures are shown).
+        events("passed", "failed", "skipped")
+    }
+}
