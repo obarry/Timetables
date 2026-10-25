@@ -6,6 +6,7 @@ import java.io.InputStream;
 import java.util.Map;
 import java.util.Properties;
 
+import com.timetables.apisncf.APISNCF;
 import com.timetables.apisncf.OfficialPlatformProvider;
 import com.timetables.apisncf.PlatformProvider;
 import com.timetables.apisncf.TransilienUnofficialPlatformProvider;
@@ -41,6 +42,11 @@ public final class AppConfig {
         return null;
     }
 
+    /** Builds the API client for the desktop: JDK HTTP transport, diagnostics on standard output. */
+    public static APISNCF buildApi(String apiKey) {
+        return new APISNCF(apiKey, new JdkHttpTransport(), message -> System.out.println(message));
+    }
+
     /**
      * Chooses the platform/track source according to the config (PLATFORM_SOURCE):
      *   OFFICIAL              -> official SNCF API (platform always "--")
@@ -54,7 +60,8 @@ public final class AppConfig {
             Map<String, String> codes = TransilienUnofficialPlatformProvider.parseStationCodes(
                     config.getProperty("TRANSILIEN_CODES", ""));
             boolean debug = Boolean.parseBoolean(config.getProperty("PLATFORM_DEBUG", "false"));
-            return new TransilienUnofficialPlatformProvider(codes, debug);
+            return new TransilienUnofficialPlatformProvider(codes, debug,
+                    new JdkHttpTransport(), message -> System.out.println(message));
         }
 
         return new OfficialPlatformProvider();

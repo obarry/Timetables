@@ -61,7 +61,7 @@ public class TimetablesApp {
         }
 
         PlatformProvider platformProvider = AppConfig.buildPlatformProvider(config);
-        APISNCF api = new APISNCF(apiKey);
+        APISNCF api = AppConfig.buildApi(apiKey);
 
         JFrame frame = new JFrame("Timetables — départs SNCF");
         frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
