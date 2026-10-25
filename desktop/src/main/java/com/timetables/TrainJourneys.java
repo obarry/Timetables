@@ -1,8 +1,5 @@
 package com.timetables;
 
-import java.io.FileInputStream;
-import java.io.IOException;
-import java.io.InputStream;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Properties;
@@ -14,20 +11,13 @@ public class TrainJourneys {
 	
     public static void main(String[] args) {
     	
-    	String API_KEY = "";
-    	
-    	try (InputStream input = new FileInputStream("resources/Timetables.properties")) {
-    	    Properties prop = new Properties();
-    	    prop.load(input);
-            API_KEY = prop.getProperty("API_KEY");
-            // DEBUG / SECURITY: printing the API key to stdout is a debug artifact
-            // and may expose sensitive information. Commented out to avoid
-            // accidental leakage. Keep the assignment above so the key is used
-            // normally by the application.
-            // System.out.println(API_KEY);
-    	} catch (IOException ex) {
-    	    ex.printStackTrace();
+    	Properties prop = AppConfig.load();
+    	if (prop == null) {
+    	    System.err.println("Cannot read resources/Timetables.properties");
+    	    return;
     	}
+    	// Never print the API key: it is a secret.
+    	String API_KEY = prop.getProperty("API_KEY");
 
     	APISNCF api = new APISNCF(API_KEY);
     	

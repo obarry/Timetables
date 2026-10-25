@@ -20,14 +20,25 @@ public final class AppConfig {
     private AppConfig() {
     }
 
+    // The file sits at the root of the repository. Depending on how the program is
+    // started, the working directory is that root (Gradle tasks, command line) or the
+    // desktop/ module folder (IDE "Run As"), hence the two candidates.
+    private static final String[] CONFIG_PATHS = {
+            "resources/Timetables.properties",
+            "../resources/Timetables.properties"
+    };
+
     public static Properties load() {
-        try (InputStream input = new FileInputStream("resources/Timetables.properties")) {
-            Properties prop = new Properties();
-            prop.load(input);
-            return prop;
-        } catch (IOException ex) {
-            return null;
+        for (String path : CONFIG_PATHS) {
+            try (InputStream input = new FileInputStream(path)) {
+                Properties prop = new Properties();
+                prop.load(input);
+                return prop;
+            } catch (IOException ex) {
+                // not here: try the next candidate
+            }
         }
+        return null;
     }
 
     /**
