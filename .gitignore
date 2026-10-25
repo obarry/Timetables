@@ -10,3 +10,17 @@ build/
 .classpath
 .project
 .settings/
+
+# Android Studio
+.idea/
+*.iml
+local.properties
+/captures/
+.cxx/
+.externalNativeBuild/
+
+# Build outputs and signing keys
+*.apk
+*.aab
+*.jks
+*.keystore
