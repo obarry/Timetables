@@ -6,6 +6,7 @@ import java.io.InputStream;
 import java.util.Map;
 import java.util.Properties;
 
+import com.timetables.apisncf.APISNCF;
 import com.timetables.apisncf.OfficialPlatformProvider;
 import com.timetables.apisncf.PlatformProvider;
 import com.timetables.apisncf.TransilienUnofficialPlatformProvider;
@@ -20,14 +21,30 @@ public final class AppConfig {
     private AppConfig() {
     }
 
+    // The file sits at the root of the repository. Depending on how the program is
+    // started, the working directory is that root (Gradle tasks, command line) or the
+    // desktop/ module folder (IDE "Run As"), hence the two candidates.
+    private static final String[] CONFIG_PATHS = {
+            "resources/Timetables.properties",
+            "../resources/Timetables.properties"
+    };
+
     public static Properties load() {
-        try (InputStream input = new FileInputStream("resources/Timetables.properties")) {
-            Properties prop = new Properties();
-            prop.load(input);
-            return prop;
-        } catch (IOException ex) {
-            return null;
+        for (String path : CONFIG_PATHS) {
+            try (InputStream input = new FileInputStream(path)) {
+                Properties prop = new Properties();
+                prop.load(input);
+                return prop;
+            } catch (IOException ex) {
+                // not here: try the next candidate
+            }
         }
+        return null;
+    }
+
+    /** Builds the API client for the desktop: JDK HTTP transport, diagnostics on standard output. */
+    public static APISNCF buildApi(String apiKey) {
+        return new APISNCF(apiKey, new JdkHttpTransport(), message -> System.out.println(message));
     }
 
     /**
@@ -43,7 +60,8 @@ public final class AppConfig {
             Map<String, String> codes = TransilienUnofficialPlatformProvider.parseStationCodes(
                     config.getProperty("TRANSILIEN_CODES", ""));
             boolean debug = Boolean.parseBoolean(config.getProperty("PLATFORM_DEBUG", "false"));
-            return new TransilienUnofficialPlatformProvider(codes, debug);
+            return new TransilienUnofficialPlatformProvider(codes, debug,
+                    new JdkHttpTransport(), message -> System.out.println(message));
         }
 
         return new OfficialPlatformProvider();

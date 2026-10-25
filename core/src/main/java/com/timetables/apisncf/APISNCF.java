@@ -1,12 +1,8 @@
 package com.timetables.apisncf;
 
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.LocalDateTime;
-import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Base64;
@@ -18,6 +14,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.function.Consumer;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -28,8 +25,7 @@ public class APISNCF {
 
     private static final String BASE_URL = "https://api.sncf.com/v1/coverage/sncf";
 
-    // A single shared (thread-safe) HTTP client for the whole application.
-    private static final HttpClient HTTP = HttpClient.newHttpClient();
+    private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(20);
 
     private static final DateTimeFormatter SNCF_DATETIME = DateTimeFormatter.ofPattern("yyyyMMdd'T'HHmmss");
 
@@ -51,7 +47,10 @@ public class APISNCF {
     // "Mulhouse (Mulhouse)" -> "Mulhouse"
     private static final Pattern REDUNDANT_CITY = Pattern.compile("^(.+) \\((.+)\\)$");
 
-    protected String api_key;
+    private final String apiKey;
+    private final HttpTransport transport;
+    // Where diagnostic messages go (console, Android Logcat, nowhere...).
+    private final Consumer<String> log;
 
     // Typed station name (normalized) -> stop_area id: avoids repeating the
     // /places search on every automatic refresh (API quota).
@@ -61,8 +60,20 @@ public class APISNCF {
     // a train's origin never changes, so we only ask for it once.
     private final Map<String, String> originCache = new ConcurrentHashMap<>();
 
-    public APISNCF(String key) {
-        api_key = key;
+    /** Same as the full constructor, but diagnostic messages are dropped. */
+    public APISNCF(String key, HttpTransport transport) {
+        this(key, transport, message -> { });
+    }
+
+    /**
+     * @param key       SNCF API key
+     * @param transport how HTTP requests are made (depends on the platform)
+     * @param log       receives diagnostic messages (one line each, never null)
+     */
+    public APISNCF(String key, HttpTransport transport, Consumer<String> log) {
+        this.apiKey = key;
+        this.transport = transport;
+        this.log = log;
     }
 
     // Converts an SNCF datetime (YYYYMMDDTHHMMSS) to a readable format
@@ -72,21 +83,17 @@ public class APISNCF {
         return dt.format(outputFmt);
     }
 
-    // Performs a GET request on the SNCF API
-    protected String callApi(String urlStr) throws Exception {
-        if (api_key == null || api_key.isBlank()) {
+    // Performs a GET request on the SNCF API (through the injected transport)
+    private String callApi(String urlStr) throws Exception {
+        if (apiKey == null || apiKey.isBlank()) {
             throw new IllegalStateException(
                 "Clé API SNCF manquante. Renseignez API_KEY dans resources/Timetables.properties.");
         }
 
-        String auth = Base64.getEncoder().encodeToString((api_key + ":").getBytes());
+        String auth = Base64.getEncoder().encodeToString((apiKey + ":").getBytes(StandardCharsets.UTF_8));
 
-        HttpRequest request = HttpRequest.newBuilder(new URI(urlStr))
-                .header("Authorization", "Basic " + auth)
-                .timeout(Duration.ofSeconds(20))
-                .GET()
-                .build();
-        HttpResponse<String> response = HTTP.send(request, HttpResponse.BodyHandlers.ofString());
+        HttpTransport.Response response = transport.get(urlStr,
+                Map.of("Authorization", "Basic " + auth), REQUEST_TIMEOUT);
 
         if (response.statusCode() != 200) {
             String detail = response.statusCode() == 401
@@ -118,11 +125,11 @@ public class APISNCF {
         } else if (body.trim().startsWith("[")) {
             places = new JSONArray(body);
         } else {
-            System.out.println("La reponse n'est pas du JSON valide: " + body);
+            log.accept("La reponse n'est pas du JSON valide: " + body);
         }
 
         if (places == null) {
-            System.out.println("Aucune gare trouvée pour « " + stationName + " ».");
+            log.accept("Aucune gare trouvée pour « " + stationName + " ».");
             return null;
         }
 
@@ -131,87 +138,59 @@ public class APISNCF {
             if (place.getString("embedded_type").equals("stop_area")) {
                 JSONObject stopArea = place.getJSONObject("stop_area");
                 String id = place.getString("id");
-                System.out.println("Gare trouvée : " + stopArea.getString("name") + " / " + id);
+                log.accept("Gare trouvée : " + stopArea.getString("name") + " / " + id);
                 stationIdCache.put(cacheKey, id);
                 return id;
             }
         }
 
-        System.out.println("Aucune gare trouvée pour « " + stationName + " ».");
+        log.accept("Aucune gare trouvée pour « " + stationName + " ».");
         return null;
     }
 
-    // Fetches the journeys between two stations at a given date
-    public void getTrains(String fromName, String toName, LocalDateTime dateTime) throws Exception {
+    /**
+     * Finds the journeys between two stations around a given date and time.
+     *
+     * @return the journeys found (empty if there is none)
+     * @throws StationNotFoundException if one of the station names matches nothing.
+     */
+    public List<Journey> findJourneys(String fromName, String toName, LocalDateTime dateTime) throws Exception {
         String fromStation = searchStationId(fromName);
+        if (fromStation == null) {
+            throw new StationNotFoundException(fromName);
+        }
         String toStation = searchStationId(toName);
-
-        if (fromStation != null && toStation != null) {
-            String dateStr = dateTime.format(SNCF_DATETIME);
-
-            // Call SNCF API with URL /journeys
-            String url = BASE_URL + "/journeys?from=" + fromStation + "&to=" + toStation + "&datetime=" + dateStr;
-            String json = callApi(url);
-
-            JSONObject obj = new JSONObject(json);
-            JSONArray journeys = null;
-
-            try {
-                journeys = obj.getJSONArray("journeys");
-            }  catch (org.json.JSONException e) {
-                System.out.println("⚠️ Aucun journey trouvé.");
-                return;
-            }
-            if (journeys.length() == 0) {
-                System.out.println("⚠️ Aucun train trouvé.");
-                return;
-            }
-
-            for (int i = 0; i < journeys.length(); i++) {
-                JSONObject journey = journeys.getJSONObject(i);
-                JSONArray sections = journey.getJSONArray("sections");
-
-                String departure = formatSncfDatetime(sections.getJSONObject(0).getString("departure_date_time"));
-                String arrival = formatSncfDatetime(sections.getJSONObject(sections.length() - 1).getString("arrival_date_time"));
-
-                System.out.println("🚆 Départ : " + departure + " → Arrivée : " + arrival);
-            }
-        }
-    }
-
-    // Console version: fetches the data via fetchBoard(), then prints it.
-    public void printBoard(BoardType type, String station, int nb_trains, PlatformProvider platformProvider) throws Exception {
-
-        List<BoardEntry> entries;
-        try {
-            entries = fetchBoard(type, station, nb_trains, platformProvider);
-        } catch (StationNotFoundException e) {
-            System.out.println(e.getMessage());
-            return;
+        if (toStation == null) {
+            throw new StationNotFoundException(toName);
         }
 
-        if (entries.isEmpty()) {
-            System.out.println("Aucun TER / TGV / Intercités / RER / Transilien trouvé pour cette gare pour le moment.");
-            return;
-        }
+        String dateStr = dateTime.format(SNCF_DATETIME);
 
-        String maj = LocalTime.now().format(DateTimeFormatter.ofPattern("HH:mm:ss"));
-        System.out.println();
-        System.out.println("=== " + type.title() + " — " + station.toUpperCase() + " (maj " + maj + ") ===");
-        System.out.printf("%-10s %-20s %-45s %-10s %-15s%n", "Heure", "Train", type.otherStationLabel(), "Quai", "Statut"); // Header row
-        System.out.println("--------------------------------------------------------------------------------------------------------"); // Separator row
+        // Call SNCF API with URL /journeys
+        String url = BASE_URL + "/journeys?from=" + fromStation + "&to=" + toStation + "&datetime=" + dateStr;
+        JSONObject obj = new JSONObject(callApi(url));
 
-        for (BoardEntry e : entries) {
-            System.out.printf("%-10s %-20s %-45s %-10s %-15s%n",
-                    e.heure(), e.train(), e.otherStation(), e.quai(), e.statut());
+        List<Journey> result = new ArrayList<>();
+        if (!obj.has("journeys")) {
+            return result;
         }
+        JSONArray journeys = obj.getJSONArray("journeys");
+        for (int i = 0; i < journeys.length(); i++) {
+            JSONArray sections = journeys.getJSONObject(i).getJSONArray("sections");
+            LocalDateTime departure = LocalDateTime.parse(
+                    sections.getJSONObject(0).getString("departure_date_time"), SNCF_DATETIME);
+            LocalDateTime arrival = LocalDateTime.parse(
+                    sections.getJSONObject(sections.length() - 1).getString("arrival_date_time"), SNCF_DATETIME);
+            result.add(new Journey(departure, arrival));
+        }
+        return result;
     }
 
     /**
      * Fetches and computes the next departures or arrivals of a station, filtered
      * (regional trains, long-distance, RER/Transilien) and limited to MAX_ROWS rows,
      * without printing anything: presentation (console, graphical...) is left to
-     * the caller.
+     * the caller. Diagnostic messages go to the injected log.
      *
      * For a departure, "otherStation" is the destination (provided directly
      * by the API). For an arrival, it is the origin, which the API does not give
@@ -409,7 +388,7 @@ public class APISNCF {
                     : stopPoint.has("name") ? stopPoint.getString("name") : null;
             return label == null ? null : cleanStationLabel(label);
         } catch (Exception e) {
-            System.out.println("[Provenance] impossible de lire " + vehicleJourneyId + " : " + e.getMessage());
+            log.accept("[Provenance] impossible de lire " + vehicleJourneyId + " : " + e.getMessage());
             return null;
         }
     }

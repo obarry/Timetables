@@ -1,14 +1,11 @@
 package com.timetables.apisncf;
 
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Consumer;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -41,14 +38,20 @@ public class TransilienUnofficialPlatformProvider implements PlatformProvider {
     private final Map<String, String> stationToTr3Code; // normalized station name -> TR3 code
     private final Map<String, JSONObject> responseCache = new HashMap<>(); // TR3 code -> raw response (successes only)
     private final Set<String> attemptedTr3Codes = new HashSet<>(); // TR3 code already attempted (success or failure) during this run
-    private final HttpClient httpClient = HttpClient.newBuilder()
-            .connectTimeout(Duration.ofSeconds(5))
-            .build();
+    private final HttpTransport transport;
+    private final Consumer<String> log;
     private final boolean debug;
 
-    public TransilienUnofficialPlatformProvider(Map<String, String> stationToTr3Code, boolean debug) {
+    /**
+     * @param transport how HTTP requests are made (depends on the platform)
+     * @param log       receives the debug messages (only used when debug is true)
+     */
+    public TransilienUnofficialPlatformProvider(Map<String, String> stationToTr3Code, boolean debug,
+            HttpTransport transport, Consumer<String> log) {
         this.stationToTr3Code = stationToTr3Code;
         this.debug = debug;
+        this.transport = transport;
+        this.log = log;
     }
 
     @Override
@@ -61,7 +64,7 @@ public class TransilienUnofficialPlatformProvider implements PlatformProvider {
         String tr3 = stationToTr3Code.get(normalize(stationName));
         if (tr3 == null) {
             if (debug) {
-                System.out.println("[Transilien non-officiel] Pas de code TR3 connu pour « " + stationName
+                log.accept("[Transilien non-officiel] Pas de code TR3 connu pour « " + stationName
                         + " » (ajoutez-le dans TRANSILIEN_CODES du fichier de config).");
             }
             return "--";
@@ -95,15 +98,11 @@ public class TransilienUnofficialPlatformProvider implements PlatformProvider {
 
     private JSONObject fetch(String tr3) {
         try {
-            HttpRequest request = HttpRequest.newBuilder(URI.create(ENDPOINT + tr3))
-                    .timeout(Duration.ofSeconds(8))
-                    .GET()
-                    .build();
-            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            HttpTransport.Response response = transport.get(ENDPOINT + tr3, Map.of(), Duration.ofSeconds(8));
 
             if (debug) {
-                System.out.println("[Transilien non-officiel] GET " + ENDPOINT + tr3 + " -> HTTP " + response.statusCode());
-                System.out.println("[Transilien non-officiel] Réponse brute : " + truncate(response.body(), 2000));
+                log.accept("[Transilien non-officiel] GET " + ENDPOINT + tr3 + " -> HTTP " + response.statusCode());
+                log.accept("[Transilien non-officiel] Réponse brute : " + truncate(response.body(), 2000));
             }
 
             String body = response.body();
@@ -116,7 +115,7 @@ public class TransilienUnofficialPlatformProvider implements PlatformProvider {
             return new JSONObject(body);
         } catch (Exception e) {
             if (debug) {
-                System.out.println("[Transilien non-officiel] Endpoint injoignable pour " + tr3 + " : " + e);
+                log.accept("[Transilien non-officiel] Endpoint injoignable pour " + tr3 + " : " + e);
             }
             return null;
         }

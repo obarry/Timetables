@@ -16,30 +16,43 @@ versions. Architecture, graphical design and the mobile port will come in later 
    API_KEY=your_sncf_api_key
    ```
 
+## Project structure
+
+A Gradle build with two modules:
+
+- `core`: pure Java (no Swing), SNCF API access, data model and platform providers. Network access goes
+  through the `HttpTransport` interface, so the module can be reused by another front-end (Android later).
+- `desktop`: Swing and console front-ends, built on `core`.
+
 ## Running the application
 
-Two boards to choose from: departures (blue) and arrivals (green).
-
-From the project root, with the JDK and the `org.json` jar on the classpath (adapt the path):
-
-```
-javac -d bin -cp "C:/Users/olivi/Development/JSON/org.json-20120521.jar" -sourcepath src src/com/timetables/TimetablesApp.java src/com/timetables/TimetablesConsole.java
-```
+Two boards to choose from: departures (blue) and arrivals (green). You only need a JDK (17 or later);
+Gradle is downloaded by the wrapper (`gradlew`) the first time. From the project root:
 
 Graphical version (Swing): pick "Départs" or "Arrivées", type a station name, then click "Afficher".
 The board refreshes every 30 seconds.
 
 ```
-java -cp "bin;C:/Users/olivi/Development/JSON/org.json-20120521.jar" com.timetables.TimetablesApp
+.\gradlew :desktop:run
 ```
 
-Console version: asks for a station name, then (D)épart or (A)rrivées.
+Console version: asks for a station name, then (D)épart or (A)rrivées. In cmd.exe or PowerShell, run
+`chcp 65001` first so that accents are displayed correctly.
 
 ```
-java -cp "bin;C:/Users/olivi/Development/JSON/org.json-20120521.jar" com.timetables.TimetablesConsole
+.\gradlew --console=plain -q :desktop:runConsole
 ```
 
-Or straight from Eclipse: right-click `TimetablesApp.java` (or `TimetablesConsole.java`) > Run As > Java Application.
+Tests (offline, no API key needed):
+
+```
+.\gradlew :core:test
+```
+
+On Linux or macOS, use `./gradlew` instead of `.\gradlew`.
+
+In Eclipse, import the project with File > Import > Gradle > Existing Gradle Project, then right-click
+`TimetablesApp.java` (or `TimetablesConsole.java`) in `desktop` > Run As > Java Application.
 
 The boards show the next TER / TGV / Intercités / RER / Transilien trains (time, train,
 destination or origin, platform, status). The user interface texts are in French.
