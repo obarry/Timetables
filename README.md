@@ -8,6 +8,19 @@ by train).
 Current state: proof of concept with departures and arrivals boards, in console and graphical (Swing)
 versions. Architecture, graphical design and the mobile port will come in later phases.
 
+## Screenshots
+
+<table>
+  <tr>
+    <td align="center"><img src="docs/images/departures.png" alt="Departures board (blue)" width="100%"></td>
+    <td align="center"><img src="docs/images/arrivals.png" alt="Arrivals board (green)" width="100%"></td>
+  </tr>
+  <tr>
+    <td align="center"><b>Departures</b> (blue board)</td>
+    <td align="center"><b>Arrivals</b> (green board)</td>
+  </tr>
+</table>
+
 ## Configuration
 
 1. Get a free API key at https://numerique.sncf.com/startup/api/token-developpeur/
