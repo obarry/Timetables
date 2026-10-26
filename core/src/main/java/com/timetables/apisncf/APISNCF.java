@@ -85,7 +85,7 @@ public class APISNCF {
 
     // Performs a GET request on the SNCF API (through the injected transport)
     private String callApi(String urlStr) throws Exception {
-        if (apiKey == null || apiKey.isBlank()) {
+        if (apiKey == null || apiKey.trim().isEmpty()) {
             throw new IllegalStateException(
                 "Clé API SNCF manquante. Renseignez API_KEY dans resources/Timetables.properties.");
         }
