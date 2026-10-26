@@ -5,10 +5,6 @@ plugins {
     application
 }
 
-repositories {
-    mavenCentral()
-}
-
 dependencies {
     // desktop uses core's classes (APISNCF, BoardEntry...).
     // org.json comes along at run time only, through core's own dependencies.

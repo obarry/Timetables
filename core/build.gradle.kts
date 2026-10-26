@@ -7,10 +7,6 @@ plugins {
     `java-library`
 }
 
-repositories {
-    mavenCentral()
-}
-
 dependencies {
     // "implementation" = used inside core only. Modules that depend on core do NOT
     // see org.json (it is a private detail). Use "api(...)" instead if core's public

@@ -164,7 +164,7 @@ public class TransilienUnofficialPlatformProvider implements PlatformProvider {
 
     private static String firstNonEmpty(String... values) {
         for (String v : values) {
-            if (v != null && !v.isBlank()) {
+            if (v != null && !v.trim().isEmpty()) {
                 return v;
             }
         }
@@ -187,12 +187,12 @@ public class TransilienUnofficialPlatformProvider implements PlatformProvider {
      */
     public static Map<String, String> parseStationCodes(String configValue) {
         Map<String, String> map = new HashMap<>();
-        if (configValue == null || configValue.isBlank()) {
+        if (configValue == null || configValue.trim().isEmpty()) {
             return map;
         }
         for (String entry : configValue.split(",")) {
             String[] parts = entry.split(":", 2);
-            if (parts.length == 2 && !parts[0].isBlank() && !parts[1].isBlank()) {
+            if (parts.length == 2 && !parts[0].trim().isEmpty() && !parts[1].trim().isEmpty()) {
                 map.put(normalize(parts[0]), parts[1].trim());
             }
         }
