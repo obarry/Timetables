@@ -25,8 +25,10 @@ import com.timetables.apisncf.APISNCF;
 import com.timetables.apisncf.BoardEntry;
 import com.timetables.apisncf.BoardType;
 import com.timetables.apisncf.PlatformProvider;
+import com.timetables.apisncf.Station;
 import com.timetables.apisncf.StationNotFoundException;
 import com.timetables.ui.BoardPanel;
+import com.timetables.ui.StationAutocomplete;
 
 /**
  * Graphical (Swing) application: departures board (blue) or arrivals board
@@ -40,6 +42,10 @@ public class TimetablesApp {
     // Counter of requests started: a response that arrives after a more recent
     // request (other station, other board) was started is ignored.
     private static final AtomicInteger requestSeq = new AtomicInteger();
+
+    /** The board being shown: the typed name, and the station when it was picked from the suggestions. */
+    private record Target(String name, Station station) {
+    }
 
     public static void main(String[] args) {
         SwingUtilities.invokeLater(TimetablesApp::createAndShow);
@@ -72,6 +78,8 @@ public class TimetablesApp {
         BoardPanel boardPanel = new BoardPanel();
 
         JTextField stationField = new JTextField(24);
+        StationAutocomplete autocomplete = new StationAutocomplete(stationField, api);
+        Target[] shown = new Target[1]; // what the automatic refresh reloads
         JButton goButton = new JButton("Afficher");
         JToggleButton departuresButton = new JToggleButton(BoardType.DEPARTURES.label(), true);
         JToggleButton arrivalsButton = new JToggleButton(BoardType.ARRIVALS.label());
@@ -106,18 +114,25 @@ public class TimetablesApp {
 
         Timer refreshTimer = new Timer(REFRESH_SECONDS * 1000, null);
         refreshTimer.setRepeats(true);
-        refreshTimer.addActionListener(e ->
-                refresh(api, platformProvider, boardPanel.getBoardType(), stationField.getText().trim(), boardPanel, false));
+        refreshTimer.addActionListener(e -> {
+            Target target = shown[0];
+            if (target != null) {
+                refresh(api, platformProvider, boardPanel.getBoardType(), target, boardPanel, false);
+            }
+        });
 
         Runnable triggerSearch = () -> {
             String station = stationField.getText().trim();
             if (station.isEmpty()) {
                 return;
             }
+            // A station picked in the list is used as is; typed text is searched by name.
+            shown[0] = new Target(station, autocomplete.getPicked());
             refreshTimer.stop();
-            refresh(api, platformProvider, boardPanel.getBoardType(), station, boardPanel, true);
+            refresh(api, platformProvider, boardPanel.getBoardType(), shown[0], boardPanel, true);
             refreshTimer.start();
         };
+        autocomplete.setOnPicked(triggerSearch);
 
         // Switching boards: new color right away, then reload
         // if a station has already been entered.
@@ -149,11 +164,9 @@ public class TimetablesApp {
     }
 
     /** Fetches the board in the background (SwingWorker) so the UI never freezes. */
-    private static void refresh(APISNCF api, PlatformProvider platformProvider, BoardType type, String station,
+    private static void refresh(APISNCF api, PlatformProvider platformProvider, BoardType type, Target target,
             BoardPanel boardPanel, boolean showLoading) {
-        if (station.isEmpty()) {
-            return;
-        }
+        final String station = target.name();
         final int seq = requestSeq.incrementAndGet();
         if (showLoading) {
             // Not for the automatic refresh: keep the board displayed
@@ -167,7 +180,9 @@ public class TimetablesApp {
             @Override
             protected List<BoardEntry> doInBackground() {
                 try {
-                    return api.fetchBoard(type, station, 100, platformProvider);
+                    return target.station() != null
+                            ? api.fetchBoard(type, target.station(), 100, platformProvider)
+                            : api.fetchBoard(type, station, 100, platformProvider);
                 } catch (StationNotFoundException e) {
                     errorMessage = e.getMessage();
                 } catch (Exception e) {

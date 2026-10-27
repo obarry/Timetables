@@ -16,15 +16,16 @@
         android:paddingTop="8dp"
         android:paddingEnd="12dp">
 
-        <EditText
+        <AutoCompleteTextView
             android:id="@+id/stationInput"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
+            android:completionThreshold="2"
             android:hint="@string/hint_station"
             android:imeOptions="actionSearch"
             android:importantForAutofill="no"
-            android:inputType="text"
+            android:inputType="textNoSuggestions"
             android:maxLines="1"
             android:textColor="#FFFFFF"
             android:textColorHint="#99FFFFFF" />

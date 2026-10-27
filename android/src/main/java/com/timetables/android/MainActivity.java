@@ -1,15 +1,18 @@
 package com.timetables.android;
 
 import android.content.Context;
+import android.graphics.drawable.ColorDrawable;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.text.Editable;
+import android.text.TextWatcher;
 import android.util.Log;
 import android.view.View;
 import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputMethodManager;
+import android.widget.AutoCompleteTextView;
 import android.widget.Button;
-import android.widget.EditText;
 import android.widget.TextView;
 
 import androidx.appcompat.app.AppCompatActivity;
@@ -34,6 +37,7 @@ import com.timetables.apisncf.BoardEntry;
 import com.timetables.apisncf.BoardType;
 import com.timetables.apisncf.OfficialPlatformProvider;
 import com.timetables.apisncf.PlatformProvider;
+import com.timetables.apisncf.Station;
 import com.timetables.apisncf.StationNotFoundException;
 import com.timetables.theme.BoardTheme;
 
@@ -46,7 +50,11 @@ public class MainActivity extends AppCompatActivity {
     private static final String TAG = "Timetables";
     private static final long REFRESH_INTERVAL_MS = 30_000;
     private static final int MAX_TRAINS = 100;
+    // Autocompletion: wait for a pause in the typing before asking the API.
+    private static final long SEARCH_DELAY_MS = 300;
+    private static final int MAX_SUGGESTIONS = 8;
     private static final String STATE_STATION = "station";
+    private static final String STATE_STATION_ID = "stationId";
     private static final String STATE_TYPE = "type";
 
     // Network calls run on one background thread, never on the UI thread.
@@ -55,21 +63,33 @@ public class MainActivity extends AppCompatActivity {
     // Incremented at each request: an answer that is no longer the latest is ignored,
     // so a slow response never overwrites a newer one (same idea as the Swing version).
     private final AtomicInteger requestSeq = new AtomicInteger();
+    // Same idea for the suggestions, on their own thread so they never wait for a board.
+    private final ExecutorService suggestionNetwork = Executors.newSingleThreadExecutor();
+    private final AtomicInteger suggestionSeq = new AtomicInteger();
     private final PlatformProvider platforms = new OfficialPlatformProvider();
     private final BoardAdapter adapter = new BoardAdapter();
     private APISNCF api;
 
     private BoardType type = BoardType.DEPARTURES;
+    // The board being shown: its name, and its id when it was picked from the suggestions
+    // (null when the user typed a name and pressed "show": it is then searched by name).
     private String station = "";
+    private Station shownStation;
+
+    // What the station field currently holds, when it comes from a suggestion.
+    private Station choice;
+    private StationSuggestAdapter suggestions;
 
     private View root;
     private View headerBand;
     private TextView titleView;
     private TextView updatedView;
     private TextView messageView;
-    private EditText stationInput;
+    private AutoCompleteTextView stationInput;
     private Button departuresButton;
     private Button arrivalsButton;
+
+    private final Runnable searchSuggestions = this::searchSuggestions;
 
     private final Runnable autoRefresh = new Runnable() {
         @Override
@@ -120,6 +140,14 @@ public class MainActivity extends AppCompatActivity {
             }
             return false;
         });
+        // Suggestions: ranked by the API, shown on a dark background like the board.
+        suggestions = new StationSuggestAdapter(this);
+        stationInput.setAdapter(suggestions);
+        stationInput.setDropDownBackgroundDrawable(new ColorDrawable(0xFF060F28));
+        stationInput.setOnItemClickListener((parent, view, position, id) -> {
+            choice = suggestions.getItem(position);
+            show();
+        });
         departuresButton.setOnClickListener(v -> setType(BoardType.DEPARTURES));
         arrivalsButton.setOnClickListener(v -> setType(BoardType.ARRIVALS));
 
@@ -127,15 +155,37 @@ public class MainActivity extends AppCompatActivity {
             station = savedInstanceState.getString(STATE_STATION, "");
             String savedType = savedInstanceState.getString(STATE_TYPE, BoardType.DEPARTURES.name());
             type = BoardType.valueOf(savedType);
-            stationInput.setText(station);
+            String savedId = savedInstanceState.getString(STATE_STATION_ID);
+            if (savedId != null && !station.isEmpty()) {
+                shownStation = new Station(savedId, station);
+                choice = shownStation;
+            }
+            stationInput.setText(station, false);
         }
         applyType();
+
+        // Added last, so that restoring the text above does not start a search.
+        stationInput.addTextChangedListener(new TextWatcher() {
+            @Override
+            public void beforeTextChanged(CharSequence s, int start, int count, int after) {
+            }
+
+            @Override
+            public void onTextChanged(CharSequence s, int start, int before, int count) {
+            }
+
+            @Override
+            public void afterTextChanged(Editable text) {
+                onStationTextChanged(text.toString().trim());
+            }
+        });
     }
 
     @Override
     protected void onSaveInstanceState(Bundle outState) {
         super.onSaveInstanceState(outState);
         outState.putString(STATE_STATION, station);
+        outState.putString(STATE_STATION_ID, shownStation == null ? null : shownStation.id());
         outState.putString(STATE_TYPE, type.name());
     }
 
@@ -157,6 +207,7 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onDestroy() {
         network.shutdownNow();
+        suggestionNetwork.shutdownNow();
         super.onDestroy();
     }
 
@@ -167,7 +218,13 @@ public class MainActivity extends AppCompatActivity {
             showMessage(getString(R.string.prompt));
             return;
         }
+        // A station picked in the list is used as is; typed text is searched by name.
+        if (choice != null && !choice.name().equals(typed)) {
+            choice = null;
+        }
+        shownStation = choice;
         station = typed;
+        cancelSuggestions();
         hideKeyboard();
         applyType();
         refresh(true);
@@ -218,6 +275,7 @@ public class MainActivity extends AppCompatActivity {
         final int seq = requestSeq.incrementAndGet();
         final BoardType requestedType = type;
         final String requestedStation = station;
+        final Station requestedChoice = shownStation;
 
         if (userInitiated) {
             adapter.submit(Collections.<BoardEntry>emptyList(), BoardTheme.of(requestedType));
@@ -227,7 +285,9 @@ public class MainActivity extends AppCompatActivity {
 
         network.execute(() -> {
             try {
-                List<BoardEntry> rows = api.fetchBoard(requestedType, requestedStation, MAX_TRAINS, platforms);
+                List<BoardEntry> rows = requestedChoice != null
+                        ? api.fetchBoard(requestedType, requestedChoice, MAX_TRAINS, platforms)
+                        : api.fetchBoard(requestedType, requestedStation, MAX_TRAINS, platforms);
                 runIfCurrent(seq, () -> showRows(requestedType, requestedStation, rows));
             } catch (StationNotFoundException e) {
                 runIfCurrent(seq, () -> showMessage(e.getMessage()));
@@ -266,6 +326,58 @@ public class MainActivity extends AppCompatActivity {
 
     private static String boardTitle(BoardType boardType, String stationName) {
         return stationName.toUpperCase(Locale.FRANCE) + " — " + boardType.label().toUpperCase(Locale.FRANCE);
+    }
+
+    /** Called at each change of the station field. */
+    private void onStationTextChanged(String typed) {
+        if (choice != null && choice.name().equals(typed)) {
+            return; // the text was just set from a suggestion: nothing to search
+        }
+        choice = null;
+        // Keep the current list on screen while typing; only drop searches now out of date.
+        mainHandler.removeCallbacks(searchSuggestions);
+        suggestionSeq.incrementAndGet();
+        if (typed.length() >= APISNCF.MIN_QUERY_LENGTH) {
+            mainHandler.postDelayed(searchSuggestions, SEARCH_DELAY_MS);
+        } else {
+            cancelSuggestions();
+        }
+    }
+
+    /** Forgets the pending and in-flight searches and hides the list. */
+    private void cancelSuggestions() {
+        mainHandler.removeCallbacks(searchSuggestions);
+        suggestionSeq.incrementAndGet();
+        suggestions.submit(Collections.<Station>emptyList());
+        stationInput.dismissDropDown();
+    }
+
+    /** Asks the API for the stations matching the text typed so far (background thread). */
+    private void searchSuggestions() {
+        final String typed = stationInput.getText().toString().trim();
+        final int seq = suggestionSeq.incrementAndGet();
+        suggestionNetwork.execute(() -> {
+            try {
+                List<Station> found = api.searchStations(typed, MAX_SUGGESTIONS);
+                runOnUiThread(() -> {
+                    if (seq == suggestionSeq.get() && !isFinishing() && !isDestroyed()) {
+                        showSuggestions(found);
+                    }
+                });
+            } catch (Exception e) {
+                // Not worth a message: the user can still type the full name and press "show".
+                Log.d(TAG, "Station search failed: " + e.getMessage());
+            }
+        });
+    }
+
+    private void showSuggestions(List<Station> found) {
+        suggestions.submit(found);
+        if (found.isEmpty()) {
+            stationInput.dismissDropDown();
+        } else if (stationInput.hasFocus()) {
+            stationInput.showDropDown();
+        }
     }
 
     private void hideKeyboard() {

@@ -1,6 +1,6 @@
 <resources>
     <string name="app_name">Timetables</string>
-    <string name="hint_station">Gare</string>
+    <string name="hint_station">Gare (2 lettres minimum)</string>
     <string name="show">Afficher</string>
     <string name="departures">Départs</string>
     <string name="arrivals">Arrivées</string>

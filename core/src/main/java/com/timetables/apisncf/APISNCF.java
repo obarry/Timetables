@@ -1,5 +1,6 @@
 package com.timetables.apisncf;
 
+import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.LocalDateTime;
@@ -24,6 +25,10 @@ import org.json.JSONObject;
 public class APISNCF {
 
     private static final String BASE_URL = "https://api.sncf.com/v1/coverage/sncf";
+
+    /** Autocompletion starts at this many typed characters. */
+    public static final int MIN_QUERY_LENGTH = 2;
+    private static final int SUGGESTION_CACHE_MAX = 200;
 
     private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(20);
 
@@ -55,6 +60,9 @@ public class APISNCF {
     // Typed station name (normalized) -> stop_area id: avoids repeating the
     // /places search on every automatic refresh (API quota).
     private final Map<String, String> stationIdCache = new ConcurrentHashMap<>();
+
+    // Autocompletion: normalized query -> suggestions (the same prefix is often typed again).
+    private final Map<String, List<Station>> suggestionCache = new ConcurrentHashMap<>();
 
     // vehicle_journey id -> origin station. The id contains the day's date and
     // a train's origin never changes, so we only ask for it once.
@@ -115,7 +123,7 @@ public class APISNCF {
         }
 
         // Call SNCF API with URL /places
-        String url = BASE_URL + "/places?q=" + stationName.trim().replace(" ", "%20");
+        String url = BASE_URL + "/places?q=" + encode(stationName.trim());
         String body = callApi(url);
 
         JSONArray places = null;
@@ -146,6 +154,58 @@ public class APISNCF {
 
         log.accept("Aucune gare trouvée pour « " + stationName + " ».");
         return null;
+    }
+
+    /**
+     * Autocompletion: the stations whose name matches what the user has typed so far,
+     * as ranked by the SNCF API (most relevant first). Only stations (stop_area) are
+     * proposed, not addresses or points of interest.
+     *
+     * @param typed the text typed so far; fewer than MIN_QUERY_LENGTH characters gives an
+     *              empty list without any network call
+     * @param max   maximum number of suggestions
+     */
+    public List<Station> searchStations(String typed, int max) throws Exception {
+        String query = typed == null ? "" : typed.trim();
+        if (query.length() < MIN_QUERY_LENGTH || max <= 0) {
+            return new ArrayList<>();
+        }
+
+        String cacheKey = query.toLowerCase() + "|" + max;
+        List<Station> cached = suggestionCache.get(cacheKey);
+        if (cached != null) {
+            return cached;
+        }
+
+        // type[]=stop_area is written type%5B%5D=stop_area: brackets are not valid in a URL.
+        String url = BASE_URL + "/places?q=" + encode(query) + "&type%5B%5D=stop_area&count=" + max;
+        JSONObject json = new JSONObject(callApi(url));
+
+        List<Station> stations = new ArrayList<>();
+        JSONArray places = json.optJSONArray("places");
+        for (int i = 0; places != null && i < places.length() && stations.size() < max; i++) {
+            JSONObject place = places.getJSONObject(i);
+            if (!"stop_area".equals(place.optString("embedded_type"))) {
+                continue;
+            }
+            String id = place.optString("id", "");
+            JSONObject stopArea = place.optJSONObject("stop_area");
+            String name = place.optString("name", stopArea == null ? "" : stopArea.optString("name", ""));
+            if (!id.isEmpty() && !name.isEmpty()) {
+                stations.add(new Station(id, cleanStationLabel(name)));
+            }
+        }
+
+        if (suggestionCache.size() >= SUGGESTION_CACHE_MAX) {
+            suggestionCache.clear(); // simple bound: this cache only saves a few calls
+        }
+        suggestionCache.put(cacheKey, stations);
+        return stations;
+    }
+
+    // Percent-encoding for a query parameter (accents, spaces, '&'...).
+    private static String encode(String text) {
+        return URLEncoder.encode(text, StandardCharsets.UTF_8).replace("+", "%20");
     }
 
     /**
@@ -205,6 +265,18 @@ public class APISNCF {
         if (stationId == null) {
             throw new StationNotFoundException(station);
         }
+        return fetchBoardById(type, stationId, station, nb_trains, platformProvider);
+    }
+
+    /**
+     * Same board, for a station chosen from the autocompletion: its id is already known,
+     * so no name search is made.
+     */
+    public List<BoardEntry> fetchBoard(BoardType type, Station station, int nb_trains, PlatformProvider platformProvider) throws Exception {
+        return fetchBoardById(type, station.id(), station.name(), nb_trains, platformProvider);
+    }
+
+    private List<BoardEntry> fetchBoardById(BoardType type, String stationId, String station, int nb_trains, PlatformProvider platformProvider) throws Exception {
 
         String json = callApi(BASE_URL + "/stop_areas/" + stationId + "/" + type.apiPath() + "?count=" + nb_trains);
 
