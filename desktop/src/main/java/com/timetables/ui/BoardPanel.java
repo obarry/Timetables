@@ -16,6 +16,7 @@ import javax.swing.JPanel;
 
 import com.timetables.apisncf.BoardEntry;
 import com.timetables.apisncf.BoardType;
+import com.timetables.theme.BoardTheme;
 
 /**
  * Recreates the look of the SNCF station display boards (alternating bands,
@@ -48,7 +49,7 @@ public class BoardPanel extends JPanel {
     private String message = "Saisissez une gare puis cliquez sur Afficher.";
 
     public BoardPanel() {
-        setBackground(theme.rowDark());
+        setBackground(new Color(theme.rowDark()));
         setPreferredSize(new Dimension(900, HEADER_HEIGHT + ROW_HEIGHT * 12));
     }
 
@@ -63,7 +64,7 @@ public class BoardPanel extends JPanel {
         this.entries = List.of();
         this.lastUpdate = "";
         this.message = "Saisissez une gare puis cliquez sur Afficher.";
-        setBackground(theme.rowDark());
+        setBackground(new Color(theme.rowDark()));
         repaint();
     }
 
@@ -125,7 +126,7 @@ public class BoardPanel extends JPanel {
     }
 
     private void paintHeader(Graphics2D g2, int width) {
-        g2.setColor(theme.header());
+        g2.setColor(new Color(theme.header()));
         g2.fillRect(0, 0, width, HEADER_HEIGHT);
 
         g2.setColor(WHITE);
@@ -162,7 +163,7 @@ public class BoardPanel extends JPanel {
     }
 
     private void paintRowBackground(Graphics2D g2, int y, int width, boolean evenRow) {
-        g2.setColor(evenRow ? theme.rowLight() : theme.rowDark());
+        g2.setColor(evenRow ? new Color(theme.rowLight()) : new Color(theme.rowDark()));
         g2.fillRect(0, y, width, ROW_HEIGHT);
     }
 
@@ -201,7 +202,7 @@ public class BoardPanel extends JPanel {
             int badgeY = y + (ROW_HEIGHT - badgeSize) / 2;
             g2.setColor(new Color(255, 255, 255, 235));
             g2.fillRoundRect(badgeX, badgeY, badgeSize, badgeSize, 8, 8);
-            g2.setColor(theme.rowDark());
+            g2.setColor(new Color(theme.rowDark()));
             g2.setFont(new Font("SansSerif", Font.BOLD, 16));
             String quai = d.quai();
             int qw = g2.getFontMetrics().stringWidth(quai);
