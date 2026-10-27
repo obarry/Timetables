@@ -1,5 +1,18 @@
 // Module "android": the Android app, built on top of core.
 
+import java.util.Properties
+
+fun loadProperties(file: File): Properties = Properties().apply {
+    if (file.exists()) file.inputStream().use { load(it) }
+}
+
+// The SNCF API key is never committed: it comes from local.properties (SNCF_API_KEY=...),
+// or from resources/Timetables.properties (API_KEY=...) used by the desktop app.
+val sncfApiKey: String =
+    loadProperties(rootProject.file("local.properties")).getProperty("SNCF_API_KEY")
+        ?: loadProperties(rootProject.file("resources/Timetables.properties")).getProperty("API_KEY")
+        ?: ""
+
 plugins {
     // The Android Gradle plugin (AGP). Its version is declared here, not in the root build,
     // so that tools that do not know Android (Eclipse) never need to load it.
@@ -20,6 +33,13 @@ android {
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        // Exposed to the code as BuildConfig.SNCF_API_KEY.
+        buildConfigField("String", "SNCF_API_KEY", "\"$sncfApiKey\"")
+    }
+
+    buildFeatures {
+        buildConfig = true
     }
 
     buildTypes {
@@ -41,6 +61,7 @@ android {
 dependencies {
     implementation(project(":core"))
     implementation("androidx.appcompat:appcompat:1.7.0")
+    implementation("androidx.recyclerview:recyclerview:1.3.2")
 
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")

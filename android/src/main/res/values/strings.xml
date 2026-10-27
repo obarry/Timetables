@@ -1,3 +1,12 @@
 <resources>
     <string name="app_name">Timetables</string>
+    <string name="hint_station">Gare</string>
+    <string name="show">Afficher</string>
+    <string name="departures">Départs</string>
+    <string name="arrivals">Arrivées</string>
+    <string name="prompt">Saisissez une gare puis touchez Afficher.</string>
+    <string name="loading">Chargement…</string>
+    <string name="no_train">Aucun TER / TGV / Intercités / RER / Transilien trouvé pour cette gare pour le moment.</string>
+    <string name="error_fetch">Impossible de récupérer le tableau : %1$s</string>
+    <string name="updated_at">Mis à jour à %1$s</string>
 </resources>
